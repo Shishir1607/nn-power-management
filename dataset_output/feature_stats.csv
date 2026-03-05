@@ -1,0 +1,11 @@
+parameter,value
+freq_min,115.3
+freq_max,3955.1
+temp_min,50.0
+temp_max,94.1
+usage_min,1.2
+usage_max,100.0
+power_min,4.101
+power_max,39.661
+voltage_min,0.762
+voltage_max,1.462
