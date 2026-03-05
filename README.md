@@ -1,4 +1,3 @@
-```markdown
 # Neural Network Based Adaptive Power Management
 
 **Institution:** BMS College of Engineering, Bangalore  
@@ -26,9 +25,9 @@ A lightweight MLP (Multi-Layer Perceptron) classifier that predicts the optimal 
 
 ## Model Architecture
 
-```
+
 Input (5) → Hidden (8) → Hidden (4) → Output (4)
-```
+
 
 | Property | Value |
 |---|---|
@@ -75,12 +74,12 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 
 ### Labeling Thresholds
 
-```python
+
 if   usage < 8%  and power < 20%  → Sleep       (0)
 elif usage < 38% and power < 60%  → Low Power   (1)
 elif usage < 72% and power < 78%  → Balanced    (2)
-else                               → Performance (3)
-```
+else                              → Performance (3)
+
 
 ---
 
@@ -107,7 +106,7 @@ else                               → Performance (3)
 
 ## Project Structure
 
-```
+
 nn-power-management/
 │
 ├── preprocess.py                         — Data cleaning, normalization, labeling, augmentation
@@ -124,16 +123,16 @@ nn-power-management/
     ├── confusion_matrix.csv              — Confusion matrix data
     ├── confusion_matrix.png              — Confusion matrix heatmap
     └── training_curves.png              — Loss and accuracy curves
-```
+
 
 ---
 
 ## How to Run
 
 ### 1. Install dependencies
-```bash
+
 pip install pandas numpy scikit-learn matplotlib torch torchvision
-```
+
 
 ### 2. Collect HWiNFO64 data
 - Run HWiNFO64 on your machine
@@ -141,14 +140,14 @@ pip install pandas numpy scikit-learn matplotlib torch torchvision
 - Place CSV files in the project folder
 
 ### 3. Run preprocessing
-```bash
+
 python preprocess.py
-```
+
 
 ### 4. Train the model
-```bash
+
 python train.py
-```
+
 
 ---
 
@@ -163,7 +162,7 @@ python train.py
 
 ---
 
-## Feature Normalization Ranges (for FPGA deployment)
+## Feature Normalisation Ranges (for FPGA deployment)
 
 | Feature | Min | Max |
 |---|---|---|
@@ -172,6 +171,5 @@ python train.py
 | CPU Usage (%) | 1.20 | 100.00 |
 | Package Power (W) | 4.10 | 39.66 |
 | Voltage (V) | 0.76 | 1.46 |
-```
 
-Create a new file called `README.md` in your project folder, paste this in, save it, then check it in GitHub Desktop and add it to your commit!
+
