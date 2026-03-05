@@ -1,0 +1,23 @@
+// weights_layer3.mem — 8-bit quantized weights (dynamic scale)
+// Load: $readmemh("weights_layer3.mem", rom);
+
+06
+ff
+1a
+f9
+fb
+01
+10
+fd
+06
+05
+ef
+fb
+09
+fc
+81
+f7
+81
+dd
+39
+5f

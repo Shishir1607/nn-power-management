@@ -1,0 +1,15 @@
+# Large data files
+dataset_output/X_*.npy
+dataset_output/y_*.npy
+dataset_output/full_dataset.csv
+training_output/best_model.pth
+
+# Raw CSV data
+*.CSV
+
+# Python cache
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
