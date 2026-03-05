@@ -105,25 +105,25 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 ---
 
 ## Project Structure
-
-
+```
 nn-power-management/
 │
-├── preprocess.py                         — Data cleaning, normalization, labeling, augmentation
-├── train.py                              — MLP training with weighted loss and early stopping
+├── preprocess.py
+├── train.py
+├── README.md
 │
 ├── dataset_output/
-│   ├── feature_stats.csv                 — Min/max values for FPGA normalization
-│   ├── class_weights.csv                 — Per-class loss weights
-│   ├── feature_distributions.png         — Feature histograms per class
-│   ├── usage_vs_slack_scatter.png        — Label boundary visualization
-│   └── raw_cpu_usage_per_session.png     — Raw session data plot
+│   ├── feature_stats.csv
+│   ├── class_weights.csv
+│   ├── feature_distributions.png
+│   ├── usage_vs_slack_scatter.png
+│   └── raw_cpu_usage_per_session.png
 │
 └── training_output/
-    ├── confusion_matrix.csv              — Confusion matrix data
-    ├── confusion_matrix.png              — Confusion matrix heatmap
-    └── training_curves.png              — Loss and accuracy curves
-
+    ├── confusion_matrix.csv
+    ├── confusion_matrix.png
+    └── training_curves.png
+```
 
 ---
 
