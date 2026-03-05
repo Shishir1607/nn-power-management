@@ -75,10 +75,10 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 ### Labeling Thresholds
 
 
-if   usage < 8%  and power < 20%  → Sleep       (0)
-elif usage < 38% and power < 60%  → Low Power   (1)
-elif usage < 72% and power < 78%  → Balanced    (2)
-else                              → Performance (3)
+- if   usage < 8%  and power < 20%  → Sleep       (0)
+- elif usage < 38% and power < 60%  → Low Power   (1)
+- elif usage < 72% and power < 78%  → Balanced    (2)
+- else                              → Performance (3)
 
 
 ---
