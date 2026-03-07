@@ -10,6 +10,8 @@
 
 A lightweight MLP (Multi-Layer Perceptron) classifier that predicts the optimal CPU power mode in real time based on hardware telemetry. The model is trained on real sensor data collected from an ASUS Vivobook (AMD Ryzen 7 5825U) using HWiNFO64, and is designed for eventual deployment as an RTL module on FPGA.
 
+The system approximates **DVFS (Dynamic Voltage and Frequency Scaling)** behaviour — predicting which power mode the CPU should operate in based on current workload and thermal state. The actual voltage and frequency scaling is handled by the hardware after receiving the mode decision.
+
 ---
 
 ## Power Modes
@@ -26,7 +28,7 @@ A lightweight MLP (Multi-Layer Perceptron) classifier that predicts the optimal 
 ## Model Architecture
 
 ```
-Input (5) → Hidden (8) → Hidden (4) → Output (4)
+Input (5) → Hidden Layer 1 (8) → Hidden Layer 2 (4) → Output (4)
 ```
 
 | Property | Value |
@@ -36,7 +38,7 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 | Activation | ReLU |
 | Loss Function | CrossEntropyLoss (weighted) |
 | Optimizer | Adam (lr=0.001) |
-| Best Epoch | 82 |
+| Best Epoch | 52 |
 
 ---
 
@@ -44,11 +46,29 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 
 | # | Feature | Source | Description |
 |---|---|---|---|
-| 1 | CPU Usage (normalized) | Total CPU Usage [%] | Direct sensor reading |
-| 2 | Temperature (normalized) | CPU Tctl/Tdie [°C] | Direct sensor reading |
-| 3 | Package Power (normalized) | CPU Package Power [W] | Direct sensor reading |
-| 4 | Switching Activity | Derived from power | Approximates transistor toggle rate |
-| 5 | Timing Slack | Derived from usage + temp | Headroom before thermal/perf limit |
+| 1 | freq_norm | Average Effective Clock [MHz] | Normalized CPU frequency |
+| 2 | temp_norm | CPU Tctl/Tdie [°C] | Normalized die temperature |
+| 3 | usage_norm | Total CPU Usage [%] | Normalized CPU utilization |
+| 4 | switching_activity | Derived from Package Power [W] | Approximates transistor toggle rate |
+| 5 | timing_slack | Derived from usage + temp | Headroom before thermal/perf limit |
+
+> **Note:** Voltage was intentionally excluded. It is highly correlated with frequency and carries redundant information. Voltage is an output effect of the power mode decision, not an input to it.
+
+---
+
+## Derived Features
+
+```
+switching_activity = power_norm
+timing_slack       = (1 − usage_norm) × (1 − temp_norm)
+```
+
+**Timing Slack Examples:**
+
+| Condition | Calculation | Slack | Meaning |
+|---|---|---|---|
+| Idle (usage=5%, temp=62°C) | (1−0.053)×(1−0.272) | **0.689** | Lots of headroom |
+| Heavy (usage=97%, temp=76°C) | (1−0.969)×(1−0.594) | **0.013** | Almost no headroom |
 
 ---
 
@@ -64,21 +84,30 @@ Input (5) → Hidden (8) → Hidden (4) → Output (4)
 
 ### Workload Sessions
 
-| Session | Rows | CPU Mean | Description |
+| Session | Rows | CPU Mean | Temp Mean | Power Mean | Description |
+|---|---|---|---|---|---|
+| Idle | 1,188 | 6.4% | 62.3°C | 8.3W | No applications running |
+| Light | 1,215 | 20.1% | 92.4°C | 26.1W | Google Meet call |
+| Medium | 1,077 | 39.2% | 85.8°C | 23.0W | Meet + Chrome tabs + VS Code |
+| Heavy | 1,204 | 96.9% | 76.4°C | 23.4W | Prime95 stress test |
+| Burst | 1,642 | 33.0% | 88.0°C | 26.9W | Alternating load cycles |
+
+### Class Distribution
+
+| Label | Class | Raw Count | % |
 |---|---|---|---|
-| Idle | 1,188 | 6.4% | No applications running |
-| Light | 1,215 | 20.1% | Google Meet call |
-| Medium | 1,077 | 39.2% | Meet + Chrome tabs + VS Code |
-| Heavy | 1,204 | 96.9% | Prime95 stress test |
-| Burst | 1,642 | 33.0% | Alternating load cycles |
+| 0 | Sleep | 967 | 15% |
+| 1 | Low Power | 1,885 | 30% |
+| 2 | Balanced | 1,774 | 28% |
+| 3 | Performance | 1,700 | 27% |
 
 ### Labeling Thresholds
 
 ```python
-if   usage < 8%  and power < 20%  → Sleep       (0)
-elif usage < 38% and power < 60%  → Low Power   (1)
-elif usage < 72% and power < 78%  → Balanced    (2)
-else                               → Performance (3)
+if   usage_norm < 0.08 and switching_activity < 0.20  →  Sleep       (0)
+elif usage_norm < 0.38 and switching_activity < 0.60  →  Low Power   (1)
+elif usage_norm < 0.72 and switching_activity < 0.78  →  Balanced    (2)
+else                                                   →  Performance (3)
 ```
 
 ---
@@ -89,49 +118,47 @@ else                               → Performance (3)
 
 | Class | Test Samples | Correct | Accuracy |
 |---|---|---|---|
-| Sleep | 449 | 449 | **100.00%** |
-| Low Power | 910 | 831 | **91.32%** |
-| Balanced | 834 | 721 | **86.45%** |
-| Performance | 807 | 793 | **98.27%** |
-| **Overall** | **3,000** | **2,794** | **93.13%** |
+| Sleep | 453 | 453 | **100.00%** |
+| Low Power | 895 | 797 | **89.05%** |
+| Balanced | 837 | 734 | **87.69%** |
+| Performance | 815 | 803 | **98.53%** |
+| **Overall** | **3,000** | **2,787** | **92.90%** |
 
 ### 8-bit Quantization Results
 
 | Metric | Value |
 |---|---|
-| Float32 Accuracy | 93.13% |
-| 8-bit Accuracy | **92.73%** |
-| Accuracy Drop | **0.40%** |
+| Float32 Accuracy | 92.90% |
+| 8-bit Accuracy | **92.77%** |
+| Accuracy Drop | **0.13%** |
 | Quantization Method | Dynamic per-layer scaling |
-
-| Class | Float32 | 8-bit | Drop |
-|---|---|---|---|
-| Sleep | 100.00% | 100.00% | 0.00% |
-| Low Power | 91.32% | 92.86% | -1.54% (improved) |
-| Balanced | 86.45% | 83.45% | 3.00% |
-| Performance | 98.27% | 98.14% | 0.12% |
 
 ### Confusion Matrix (Float32)
 
 | | Sleep | Low Power | Balanced | Performance |
 |---|---|---|---|---|
-| **Sleep** | 449 | 0 | 0 | 0 |
-| **Low Power** | 28 | 831 | 51 | 0 |
-| **Balanced** | 0 | 76 | 721 | 37 |
-| **Performance** | 0 | 0 | 14 | 793 |
+| **Sleep** | 453 | 0 | 0 | 0 |
+| **Low Power** | 37 | 797 | 61 | 0 |
+| **Balanced** | 0 | 71 | 734 | 32 |
+| **Performance** | 0 | 0 | 12 | 803 |
 
 ---
 
 ## Quantization Details
 
-| Layer | Float Min | Float Max | Scale Factor | Int Min | Int Max |
-|---|---|---|---|---|---|
-| W1 | -1.5574 | 2.1327 | 59.549 | -93 | 127 |
-| b1 | -0.2094 | 1.5994 | 79.403 | -17 | 127 |
-| W2 | -1.4319 | 3.1184 | 40.726 | -58 | 127 |
-| b2 | -0.3285 | 1.2417 | 102.278 | -34 | 127 |
-| W3 | -6.7187 | 1.3878 | 18.903 | -127 | 26 |
-| b3 | -9.9812 | 7.4932 | 12.724 | -127 | 95 |
+Scale factors saved in `quantization_output/layer_scales.csv`.  
+Quantized weights saved as `.mem` files for Verilog `$readmemh`.
+
+---
+
+## Feature Normalization Ranges (for FPGA deployment)
+
+| Feature | Min | Max |
+|---|---|---|
+| Frequency (MHz) | 115.30 | 3955.10 |
+| Temperature (°C) | 50.00 | 94.10 |
+| CPU Usage (%) | 1.20 | 100.00 |
+| Package Power (W) | 4.10 | 39.66 |
 
 ---
 
@@ -174,46 +201,34 @@ nn-power-management/
 ├── README.md
 │
 ├── dataset_output/
-│   ├── feature_stats.csv
-│   ├── class_weights.csv
-│   ├── feature_distributions.png
-│   ├── usage_vs_slack_scatter.png
-│   └── raw_cpu_usage_per_session.png
+│   ├── feature_stats.csv               — Min/max for FPGA normalization
+│   ├── class_weights.csv               — Per-class loss weights
+│   ├── feature_distributions.png       — Feature histograms per class
+│   ├── usage_vs_slack_scatter.png      — Label boundary visualization
+│   └── raw_cpu_usage_per_session.png   — Raw session comparison
 │
 ├── quantization_output/
-│   ├── weights_layer1.mem
-│   ├── weights_layer2.mem
-│   ├── weights_layer3.mem
-│   ├── layer_scales.csv
-│   ├── weights_quantized.csv
-│   ├── weights_summary.txt
-│   └── quantization_analysis.png
+│   ├── weights_layer1.mem              — Layer 1 weights for Verilog
+│   ├── weights_layer2.mem              — Layer 2 weights for Verilog
+│   ├── weights_layer3.mem              — Layer 3 weights for Verilog
+│   ├── layer_scales.csv                — Per-layer scale factors
+│   ├── weights_quantized.csv           — All 104 weights as integers
+│   ├── weights_summary.txt             — Human readable values
+│   └── quantization_analysis.png       — Quantization error plots
 │
 └── training_output/
-    ├── confusion_matrix.csv
-    ├── confusion_matrix.png
-    └── training_curves.png
+    ├── confusion_matrix.csv            — Confusion matrix data
+    ├── confusion_matrix.png            — Confusion matrix heatmap
+    └── training_curves.png             — Loss and accuracy curves
 ```
-
----
-
-## Feature Normalization Ranges (for FPGA deployment)
-
-| Feature | Min | Max |
-|---|---|---|
-| Frequency (MHz) | 115.30 | 3955.10 |
-| Temperature (°C) | 50.00 | 94.10 |
-| CPU Usage (%) | 1.20 | 100.00 |
-| Package Power (W) | 4.10 | 39.66 |
-| Voltage (V) | 0.76 | 1.46 |
 
 ---
 
 ## Roadmap
 
-- [x] Phase 1 — Data Collection (HWiNFO64, 5 sessions, 6,326 samples)
+- [x] Phase 1 — Data Collection (HWiNFO64, 5 sessions, 6,326 real samples)
 - [x] Phase 2 — Preprocessing (normalization, labeling, augmentation to 20,000)
-- [x] Phase 3 — MLP Training (93.13% test accuracy)
-- [x] Phase 4 — 8-bit Quantization (92.73%, only 0.40% drop)
+- [x] Phase 3 — MLP Training (92.90% test accuracy, converged at epoch 52)
+- [x] Phase 4 — 8-bit Quantization (92.77%, only 0.13% accuracy drop)
 - [ ] Phase 5 — RTL implementation in Verilog
 - [ ] Phase 6 — FPGA synthesis and verification
