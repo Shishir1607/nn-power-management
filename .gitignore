@@ -1,15 +1,26 @@
-# Large data files
-dataset_output/X_*.npy
-dataset_output/y_*.npy
-dataset_output/full_dataset.csv
-training_output/best_model.pth
+# Raw HWiNFO data
+burst.csv
+heavy.csv
+idle.csv
+light.csv
+medium.csv
 
-# Raw CSV data
-*.CSV
+# Large binary/numpy files
+dataset_output/
+training_output/
+quantization_output/
+
+# Vivado project (huge cache, sim, and synthesis files)
+power_mlp_fsm/
+
+# Utility scripts
+move.py
 
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
 
-# VS Code
-.vscode/
+# Windows
+Thumbs.db
+desktop.ini
