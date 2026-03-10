@@ -43,7 +43,7 @@ Real CPU Data (HWiNFO64)
   (FSM in Verilog)
         ↓
   Vivado Simulation
-  (20/20 test vectors)
+  (6326 real samples)
 ```
 
 ---
@@ -147,15 +147,6 @@ else                                                   →  Performance (3)
 | Performance | 815 | 803 | **98.53%** |
 | **Overall** | **3,000** | **2,787** | **92.90%** |
 
-### Fixed-Point Quantization Results
-
-| Metric | Value |
-|---|---|
-| Float32 Accuracy | 92.90% |
-| 1000x Fixed-Point Accuracy | **92.43%** |
-| Accuracy Drop | **0.47%** |
-| Quantization Method | 1000x weight scaling, 48-bit accumulators |
-
 ### Confusion Matrix (Float32)
 
 | | Sleep | Low Power | Balanced | Performance |
@@ -164,6 +155,18 @@ else                                                   →  Performance (3)
 | **Low Power** | 37 | 797 | 61 | 0 |
 | **Balanced** | 0 | 71 | 734 | 32 |
 | **Performance** | 0 | 0 | 12 | 803 |
+
+### Complete Accuracy Comparison
+
+| Test Set | Samples | Overall | Sleep | LowPower | Balanced | Performance |
+|---|---|---|---|---|---|---|
+| Float32 Python | 3,000 | 92.90% | 100% | 89% | 88% | 99% |
+| Fixed-Point Python | 1,000 | 91.90% | 100% | 83% | 91% | 98% |
+| Verilog XSim | 1,000 | 91.90% | 100% | 83% | 91% | 98% |
+| Fixed-Point Python | 6,326 | 93.50% | 100% | 87% | 91% | 99% |
+| **Verilog XSim** | **6,326** | **93.50%** | **100%** | **87%** | **91%** | **99%** |
+
+> Python fixed-point and Verilog simulation produce **identical results** on every test case — confirming the hardware is a bit-accurate implementation of the software model.
 
 ---
 
@@ -177,61 +180,61 @@ This avoids any floating-point arithmetic in hardware while preserving classific
 
 ## Hardware Implementation
 
-**File:** `verilog/power_mlp_top.v`
+The design is split into 4 Verilog modules inside `power_mlp_top.v`:
 
-- Clocked synchronous FSM with 10 states
+| Module | Function |
+|---|---|
+| `layer1` | W1×x + B1, ReLU, >>>10 → h1[0:7] |
+| `layer2` | W2×h1 + B2, ReLU, >>>10 → h2[0:3] |
+| `layer3` | W3×h2 + B3, no ReLU → z3[0:3] |
+| `power_mlp_top` | Sequencer FSM + argmax → mode[1:0] |
+
+**Design parameters:**
 - Inputs: 5 × 11-bit unsigned (range 0–1000)
 - Weights: 16-bit signed integers (hardcoded)
 - Accumulators: 48-bit signed
-- ReLU: inline, clips negative accumulator to zero
+- ReLU: inline, clips negative accumulator to zero then >>>10
 - Output: 2-bit mode signal + valid pulse
 - No floating-point units required
 
-**FSM States:**
+**Top-level FSM States:**
 ```
-IDLE → L1_MAC → L1_BIAS → L1_RELU
-     → L2_MAC → L2_BIAS → L2_RELU
-     → L3_MAC → L3_BIAS → OUTPUT → IDLE
+IDLE → S_L1 → S_L2 → S_L3 → S_OUT → IDLE
 ```
 
 ---
 
-## Simulation Results
+## FPGA Resource Utilization
 
-Verified in Vivado 2025.2 behavioral simulation using 20 test vectors (5 per class):
+Target device: **Xilinx Artix-7 xc7a12ticsg325-1L**
+
+| Resource | Used | Available | Utilization |
+|---|---|---|---|
+| Slice LUTs | 834 | 8,000 | **10.43%** |
+| Flip Flops | 829 | 16,000 | **5.18%** |
+| DSP48E1 | 7 | 40 | **17.50%** |
+| Block RAM | 0 | 20 | **0.00%** |
+| I/O Pins | 61 | 150 | **40.67%** |
+| Clock Buffer | 1 | 32 | **3.13%** |
+
+The entire neural network inference engine fits in **10% of a tiny Artix-7 FPGA** using only 7 dedicated DSP multiplier blocks.
+
+---
+
+## Simulation Results — 6326 Real Samples
 
 ```
 =====================================================
-   Power MLP FSM - Behavioral Simulation
+   Power MLP FSM - 6326 Real CSV Samples
 =====================================================
- # |  f0   f1   f2   f3   f4 | Exp | Got | Result
----+---------------------------+-----+-----+-------
- 1 |  133  880  111  506  107 | 1 | 1 | PASS
- 2 |  203  995  185  622    4 | 2 | 2 | PASS
- 3 |  837  567  993  532    3 | 3 | 3 | PASS
- 4 |   83  946   98  438   53 | 1 | 1 | PASS
- 5 |  836  555 1000  557    0 | 3 | 3 | PASS
- 6 |  285  780  308  527  152 | 1 | 1 | PASS
- 7 |  822  596 1000  532    0 | 3 | 3 | PASS
- 8 |   43   75   48   75  945 | 0 | 0 | PASS
- 9 |  840  585  994  532    3 | 3 | 3 | PASS
-10 |  859  895  912  780    0 | 3 | 3 | PASS
-11 |  265  941  269  655   43 | 2 | 2 | PASS
-12 |  263  961  249  624   29 | 2 | 2 | PASS
-13 |  124  723  118  512  244 | 1 | 1 | PASS
-14 |  288  859  286  523  108 | 1 | 1 | PASS
-15 |  547  725  573  530  134 | 2 | 2 | PASS
-16 |   13    6   20   29  942 | 0 | 0 | PASS
-17 |  173 1000  236  629   37 | 2 | 2 | PASS
-18 |    1   11   11   34  977 | 0 | 0 | PASS
-19 |   37  160   18   50  824 | 0 | 0 | PASS
-20 |   10  163   35   47  807 | 0 | 0 | PASS
+  Sleep       : 967/967   (100%)
+  LowPower    : 1648/1885  (87%)
+  Balanced    : 1624/1774  (91%)
+  Performance : 1683/1700  (99%)
+-----------------------------------------------------
+  Overall     : 5922/6326  (93%)
 =====================================================
-  Total    : 20
-  Pass     : 20
-  Fail     : 0
-  Accuracy : 100%
-=====================================================
+$finish called at time : 9236015 ns
 ```
 
 ---
@@ -269,7 +272,7 @@ python preprocess.py
 python train.py
 ```
 
-### 5. Generate fixed-point weights and test vectors
+### 5. Quantize and generate test vectors
 ```bash
 python quantize.py
 python test.py
@@ -277,9 +280,9 @@ python test.py
 
 ### 6. Run Verilog simulation
 - Open `power_mlp_fsm` project in Vivado 2025.2
-- Copy `fixedpoint_output/testvectors.txt` to the xsim working directory
+- Copy desired `.txt` file from `fixedpoint_output/` to the xsim working directory
 - Run Behavioral Simulation
-- In Tcl Console: `run 5ms`
+- In Tcl Console: `run 15000ms`
 
 ---
 
@@ -290,12 +293,16 @@ nn-power-management/
 ├── preprocess.py               # Data cleaning, augmentation, scaling
 ├── train.py                    # MLP training (PyTorch)
 ├── quantize.py                 # 8-bit quantization analysis
-├── test.py                     # Fixed-point weight generation and test vectors
+├── test.py                     # Fixed-point weight generation
+├── new_vectors.py              # Dataset generation for verilog
 ├── verilog/
-│   ├── power_mlp_top.v         # RTL implementation (FSM)
-│   └── tb_power_mlp.v          # Testbench with 20 test vectors
+│   ├── power_mlp_top.v         # RTL implementation (4 modules)
+│   └── tb_power_mlp.v          # Testbench
 └── fixedpoint_output/
-    └── testvectors.txt         # 20 verified test vectors
+    ├── testvectors.txt          # 20 verified vectors (set 1)
+    ├── testvectors2.txt         # 20 verified vectors (set 2)
+    ├── testvectors1000.txt      # 1000 test vectors
+    └── testvectors_real.txt     # 6326 real CSV vectors
 ```
 
 ---
@@ -307,7 +314,7 @@ nn-power-management/
 | HWiNFO64 | Real CPU telemetry data collection |
 | Python 3 + PyTorch | Data preprocessing and model training |
 | NumPy | Fixed-point arithmetic verification |
-| Vivado 2025.2 | RTL simulation and synthesis |
+| Vivado 2025.2 | RTL synthesis and simulation |
 
 ---
 
@@ -324,9 +331,9 @@ nn-power-management/
 - [x] Phase 1 — Data Collection (HWiNFO64, 5 sessions, 6,326 real samples)
 - [x] Phase 2 — Preprocessing (normalization, labeling, augmentation to 20,000)
 - [x] Phase 3 — MLP Training (92.90% test accuracy, converged at epoch 52)
-- [x] Phase 4 — Fixed-Point Quantization (92.43%, only 0.47% accuracy drop)
-- [x] Phase 5 — RTL Implementation in Verilog (FSM, 10 states)
-- [x] Phase 6 — Behavioral Simulation (20/20 test vectors, 100% accuracy)
-- [ ] Phase 7 — FPGA Synthesis and On-Device Verification
+- [x] Phase 4 — Fixed-Point Quantization (1000x scale, 48-bit accumulators)
+- [x] Phase 5 — RTL Implementation in Verilog (4 modules, hierarchical FSM)
+- [x] Phase 6 — Behavioral Simulation (6,326 real samples, 93% accuracy)
+- [x] Phase 7 — FPGA Synthesis (834 LUTs, 7 DSPs, 10% utilization on Artix-7)
+- [ ] Phase 8 — On-Device FPGA Verification
 
----
