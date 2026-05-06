@@ -390,3 +390,5 @@ nn-power-management/
 - [x] Phase 8 — ASIC Physical Design (Cadence Innovus, 32nm, 0.88mW, 23,654µm²)
 - [ ] Phase 9 — DRC Clean Sign-off (pending sroute fix)
 - [ ] Phase 10 — VCD-Based Power Analysis (pending college server session)
+
+---
