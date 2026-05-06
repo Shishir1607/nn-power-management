@@ -2,13 +2,12 @@
 
 **Institution:** BMS College of Engineering, Bangalore  
 **Department:** Electronics and Communication Engineering  
-**Project Type:** VLSI Systems — Project Work 1
 
 ---
 
 ## Overview
 
-A lightweight MLP (Multi-Layer Perceptron) classifier that predicts the optimal CPU power mode in real time based on hardware telemetry. The model is trained on real sensor data collected from an ASUS Vivobook (AMD Ryzen 7 5825U) using HWiNFO64, and implemented as a synthesizable RTL FSM in Verilog, verified through behavioral simulation in Vivado 2025.2.
+A lightweight MLP (Multi-Layer Perceptron) classifier that predicts the optimal CPU power mode in real time based on hardware telemetry. The model is trained on real sensor data collected from an ASUS Vivobook (AMD Ryzen 7 5825U) using HWiNFO64, and implemented as a synthesizable RTL FSM in Verilog, verified through behavioral simulation in Vivado 2025.2, synthesized on Artix-7 FPGA, and implemented as a full custom ASIC in Cadence Innovus using 32nm SAED technology.
 
 The system approximates **DVFS (Dynamic Voltage and Frequency Scaling)** behaviour — predicting which power mode the CPU should operate in based on current workload and thermal state. The actual voltage and frequency scaling is handled by the hardware after receiving the mode decision.
 
@@ -44,6 +43,12 @@ Real CPU Data (HWiNFO64)
         ↓
   Vivado Simulation
   (6326 real samples)
+        ↓
+  FPGA Synthesis
+  (Artix-7 xc7a12ticsg325-1L)
+        ↓
+  ASIC Implementation
+  (Cadence Innovus, 32nm SAED)
 ```
 
 ---
@@ -85,13 +90,6 @@ Input (5) → Hidden Layer 1 (8) → Hidden Layer 2 (4) → Output (4)
 switching_activity = power_norm
 timing_slack       = (1 − usage_norm) × (1 − temp_norm)
 ```
-
-**Timing Slack Examples:**
-
-| Condition | Calculation | Slack | Meaning |
-|---|---|---|---|
-| Idle (usage=5%, temp=62°C) | (1−0.053)×(1−0.272) | **0.689** | Lots of headroom |
-| Heavy (usage=97%, temp=76°C) | (1−0.969)×(1−0.594) | **0.013** | Almost no headroom |
 
 ---
 
@@ -161,18 +159,26 @@ else                                                   →  Performance (3)
 | Test Set | Samples | Overall | Sleep | LowPower | Balanced | Performance |
 |---|---|---|---|---|---|---|
 | Float32 Python | 3,000 | 92.90% | 100% | 89% | 88% | 99% |
-| Fixed-Point Python | 1,000 | 91.90% | 100% | 83% | 91% | 98% |
-| Verilog XSim | 1,000 | 91.90% | 100% | 83% | 91% | 98% |
 | Fixed-Point Python | 6,326 | 93.50% | 100% | 87% | 91% | 99% |
-| **Verilog XSim** | **6,326** | **93.50%** | **100%** | **87%** | **91%** | **99%** |
+| Verilog XSim | 6,326 | 93.50% | 100% | 87% | 91% | 99% |
 
 > Python fixed-point and Verilog simulation produce **identical results** on every test case — confirming the hardware is a bit-accurate implementation of the software model.
+
+### Baseline Comparison — MLP vs Windows DVFS
+
+| Method | Accuracy | Notes |
+|---|---|---|
+| Windows Balanced AC (80% floor) | ~65% | powercfg PROCTHROTTLEMIN=0x50 |
+| Linux schedutil governor | 71.8% | Best software governor |
+| **MLP Fixed-Point (hardware)** | **93.5%** | **+21.7pp over schedutil** |
+
+> Windows AC mode enforces 80% minimum CPU frequency floor, preventing Sleep/LowPower states entirely. MLP correctly prescribes Sleep (4.5W) and LowPower (8.0W) for 44.9% of workloads that Windows misses.
 
 ---
 
 ## Fixed-Point Quantization
 
-Floating-point weights are scaled by 1000x and stored as 16-bit signed integers. Biases are scaled by 1,000,000 (1000 × 1000). Between layers, accumulators are right-shifted by 10 bits (÷1024 ≈ ÷1000) to restore magnitude before the next layer. All intermediate values use 48-bit signed accumulators to prevent overflow.
+Floating-point weights are scaled by 1000× and stored as 16-bit signed integers. Biases are scaled by 1,000,000 (1000 × 1000). Between layers, accumulators are right-shifted by 10 bits (÷1024 ≈ ÷1000) to restore magnitude before the next layer. All intermediate values use 48-bit signed accumulators to prevent overflow.
 
 This avoids any floating-point arithmetic in hardware while preserving classification accuracy.
 
@@ -195,6 +201,7 @@ The design is split into 4 Verilog modules inside `power_mlp_top.v`:
 - Accumulators: 48-bit signed
 - ReLU: inline, clips negative accumulator to zero then >>>10
 - Output: 2-bit mode signal + valid pulse
+- Latency: 127 clock cycles @ 100 MHz = **1.27 µs per inference**
 - No floating-point units required
 
 **Top-level FSM States:**
@@ -217,7 +224,31 @@ Target device: **Xilinx Artix-7 xc7a12ticsg325-1L**
 | I/O Pins | 61 | 150 | **40.67%** |
 | Clock Buffer | 1 | 32 | **3.13%** |
 
-The entire neural network inference engine fits in **10% of a tiny Artix-7 FPGA** using only 7 dedicated DSP multiplier blocks.
+---
+
+## ASIC Implementation — Cadence Innovus (32nm SAED)
+
+| Metric | Value |
+|---|---|
+| Technology | 32nm SAED LVT |
+| Standard Cells | 6,068 |
+| Total Area | 23,654 µm² |
+| Estimated Power | 0.88 mW |
+| Clock Frequency | 100 MHz |
+| Setup Slack | +5.999 ns (timing met) |
+| Equivalent Frequency | ~200 MHz achievable |
+
+> Power estimated using default 20% toggle rate. VCD-based analysis pending.
+
+### Implementation vs FPGA Comparison
+
+| Metric | FPGA (Artix-7) | ASIC (32nm SAED) |
+|---|---|---|
+| Area | 834 LUTs | 23,654 µm² |
+| Power | ~12.4 W (board) | 0.88 mW |
+| Clock | 100 MHz | 100 MHz (+6ns slack) |
+| Latency | 1.27 µs | 1.27 µs |
+| Power Reduction | — | **~14,000×** |
 
 ---
 
@@ -234,12 +265,11 @@ The entire neural network inference engine fits in **10% of a tiny Artix-7 FPGA*
 -----------------------------------------------------
   Overall     : 5922/6326  (93%)
 =====================================================
-$finish called at time : 9236015 ns
 ```
 
 ---
 
-## Feature Normalization Ranges (for FPGA deployment)
+## Feature Normalization Ranges (for FPGA/ASIC deployment)
 
 | Feature | Min | Max |
 |---|---|---|
@@ -247,6 +277,19 @@ $finish called at time : 9236015 ns
 | Temperature (°C) | 50.00 | 94.10 |
 | CPU Usage (%) | 1.20 | 100.00 |
 | Package Power (W) | 4.10 | 39.66 |
+
+---
+
+## Power Estimation Model (Ryzen 7 5825U)
+
+| Mode | Estimated TDP |
+|---|---|
+| Sleep | 4.5 W |
+| Low Power | 8.0 W |
+| Balanced | 15.0 W |
+| Performance | 25.0 W |
+
+> MLP prescribes Sleep/LowPower for 44.9% of workloads — Windows AC mode cannot drop below Balanced (15W minimum due to 80% frequency floor).
 
 ---
 
@@ -292,17 +335,23 @@ python test.py
 nn-power-management/
 ├── preprocess.py               # Data cleaning, augmentation, scaling
 ├── train.py                    # MLP training (PyTorch)
-├── quantize.py                 # 8-bit quantization analysis
+├── quantize.py                 # Fixed-point quantization analysis
 ├── test.py                     # Fixed-point weight generation
-├── new_vectors.py              # Dataset generation for verilog
+├── new_vectors.py              # Dataset generation for Verilog
+├── baseline_comparison.py      # MLP vs DVFS governors comparison
 ├── verilog/
 │   ├── power_mlp_top.v         # RTL implementation (4 modules)
 │   └── tb_power_mlp.v          # Testbench
-└── fixedpoint_output/
-    ├── testvectors.txt          # 20 verified vectors (set 1)
-    ├── testvectors2.txt         # 20 verified vectors (set 2)
-    ├── testvectors1000.txt      # 1000 test vectors
-    └── testvectors_real.txt     # 6326 real CSV vectors
+├── fixedpoint_output/
+│   ├── testvectors.txt          # 20 verified vectors (set 1)
+│   ├── testvectors2.txt         # 20 verified vectors (set 2)
+│   ├── testvectors1000.txt      # 1000 test vectors
+│   └── testvectors_real.txt     # 6326 real CSV vectors
+├── dataset_output/
+│   ├── feature_stats.csv        # Normalization ranges
+│   └── class_weights.csv        # Class weights for training
+└── quantization_output/
+    └── weights_summary.txt      # Quantized weight values
 ```
 
 ---
@@ -310,11 +359,13 @@ nn-power-management/
 ## Tools Used
 
 | Tool | Purpose |
-|------|---------|
+|---|---|
 | HWiNFO64 | Real CPU telemetry data collection |
 | Python 3 + PyTorch | Data preprocessing and model training |
 | NumPy | Fixed-point arithmetic verification |
 | Vivado 2025.2 | RTL synthesis and simulation |
+| Cadence Innovus | Physical design — place and route |
+| SAED 32nm PDK | Standard cell library for ASIC |
 
 ---
 
@@ -326,14 +377,17 @@ nn-power-management/
 
 ---
 
+
 ## Roadmap
 
 - [x] Phase 1 — Data Collection (HWiNFO64, 5 sessions, 6,326 real samples)
 - [x] Phase 2 — Preprocessing (normalization, labeling, augmentation to 20,000)
 - [x] Phase 3 — MLP Training (92.90% test accuracy, converged at epoch 52)
-- [x] Phase 4 — Fixed-Point Quantization (1000x scale, 48-bit accumulators)
+- [x] Phase 4 — Fixed-Point Quantization (1000× scale, 48-bit accumulators)
 - [x] Phase 5 — RTL Implementation in Verilog (4 modules, hierarchical FSM)
-- [x] Phase 6 — Behavioral Simulation (6,326 real samples, 93% accuracy)
+- [x] Phase 6 — Behavioral Simulation (6,326 real samples, 93.5% accuracy)
 - [x] Phase 7 — FPGA Synthesis (834 LUTs, 7 DSPs, 10% utilization on Artix-7)
-- [ ] Phase 8 — On-Device FPGA Verification
-
+- [x] Phase 8 — ASIC Physical Design (Cadence Innovus, 32nm, 0.88mW, 23,654µm²)
+- [ ] Phase 9 — DRC Clean Sign-off (pending sroute fix)
+- [ ] Phase 10 — VCD-Based Power Analysis (pending college server session)
+```
