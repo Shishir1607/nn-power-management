@@ -42,7 +42,7 @@ Real CPU Data (HWiNFO64)
   (FSM in Verilog)
         ↓
   Vivado Simulation
-  (6326 real samples)
+  (20000 samples)
         ↓
   FPGA Synthesis
   (Artix-7 xc7a12ticsg325-1L)
