@@ -36,13 +36,13 @@ Real CPU Data (HWiNFO64)
   (MLP 5→8→4→4, ReLU)
         ↓
    quantize.py
-  (8-bit analysis + 1000x fixed-point + test vectors)
+  (1000x fixed-point)
         ↓
  power_mlp_top.v
   (FSM in Verilog)
         ↓
   Vivado Simulation
-  (18,023 verified vectors)
+  (6326 real samples)
         ↓
   FPGA Synthesis
   (Artix-7 xc7a12ticsg325-1L)
@@ -122,7 +122,7 @@ timing_slack       = (1 − usage_norm) × (1 − temp_norm)
 | 2 | Balanced | 1,774 | 28% |
 | 3 | Performance | 1,700 | 27% |
 
-### Labelling Thresholds
+### Labeling Thresholds
 
 ```python
 if   usage_norm < 0.08 and switching_activity < 0.20  →  Sleep       (0)
@@ -158,14 +158,11 @@ else                                                   →  Performance (3)
 
 | Test Set | Samples | Overall | Sleep | LowPower | Balanced | Performance |
 |---|---|---|---|---|---|---|
-| Float32 Python | 20,000 | 92.86% | 100% | — | — | — |
-| 8-bit Dynamic | 20,000 | 92.78% | — | — | — | — |
-| Fixed-Point 1000x Python | 20,000 | 92.48% | 100% | 85% | 90% | 99% |
+| Float32 Python | 3,000 | 92.90% | 100% | 89% | 88% | 99% |
+| Fixed-Point Python | 6,326 | 93.50% | 100% | 87% | 91% | 99% |
 | Verilog XSim | 6,326 | 93.50% | 100% | 87% | 91% | 99% |
 
 > Python fixed-point and Verilog simulation produce **identical results** on every test case — confirming the hardware is a bit-accurate implementation of the software model.
->
-> The fixed-point model correctly classifies **18,023 out of 20,000** samples across all splits. Only correctly classified samples are saved as test vectors; misclassified samples are excluded by design.
 
 ### Baseline Comparison — MLP vs Windows DVFS
 
@@ -184,18 +181,6 @@ else                                                   →  Performance (3)
 Floating-point weights are scaled by 1000× and stored as 16-bit signed integers. Biases are scaled by 1,000,000 (1000 × 1000). Between layers, accumulators are right-shifted by 10 bits (÷1024 ≈ ÷1000) to restore magnitude before the next layer. All intermediate values use 48-bit signed accumulators to prevent overflow.
 
 This avoids any floating-point arithmetic in hardware while preserving classification accuracy.
-
-### 8-bit Quantization Analysis (for reference)
-
-A separate 8-bit dynamic per-layer quantization was also evaluated:
-
-| Method | Accuracy | Drop vs Float32 |
-|---|---|---|
-| Float32 | 92.86% | — |
-| 8-bit Dynamic | 92.78% | 0.08% |
-| Fixed-Point 1000x (RTL) | 92.48% | 0.38% |
-
-The RTL implementation uses the **1000× fixed-point** scheme, not 8-bit, as it avoids per-layer scale factors entirely and maps directly to hardcoded Verilog integer weights.
 
 ---
 
@@ -226,7 +211,7 @@ IDLE → S_L1 → S_L2 → S_L3 → S_OUT → IDLE
 
 ---
 
-## FPGA Resource Utilisation
+## FPGA Resource Utilization
 
 Target device: **Xilinx Artix-7 xc7a12ticsg325-1L**
 
@@ -267,23 +252,20 @@ Target device: **Xilinx Artix-7 xc7a12ticsg325-1L**
 
 ---
 
-## Simulation Results — 18,023 Verified Vectors
+## Simulation Results — 6326 Real Samples
 
 ```
 =====================================================
-   Power MLP FSM - Fixed-Point Verified Vectors
+   Power MLP FSM - 6326 Real CSV Samples
 =====================================================
-  Sleep       : 3023/3023  (100%)
-  LowPower    : 5092/5964   (85%)
-  Balanced    : 5013/5582   (90%)
-  Performance : 5369/5431   (99%)
+  Sleep       : 967/967   (100%)
+  LowPower    : 1648/1885  (87%)
+  Balanced    : 1624/1774  (91%)
+  Performance : 1683/1700  (99%)
 -----------------------------------------------------
-  Overall     : 18023/20000  (90%)
+  Overall     : 5922/6326  (93%)
 =====================================================
 ```
-
-> Only correctly classified samples are included in `testvectors_20000.txt`.
-> Verilog simulation on `testvectors_real.txt` (6,326 raw CSV samples) gives 93.5% overall.
 
 ---
 
@@ -333,23 +315,15 @@ python preprocess.py
 python train.py
 ```
 
-### 5. Quantize, verify, and generate test vectors
+### 5. Quantize and generate test vectors
 ```bash
 python quantize.py
+python test.py
 ```
-
-This single script performs:
-- 8-bit dynamic per-layer quantization analysis
-- 1000× fixed-point weight extraction (used in Verilog)
-- Float32 / 8-bit / fixed-point accuracy comparison across all 20,000 samples
-- Generation of `testvectors.txt`, `testvectors2.txt`, `testvectors_20000.txt`
-- Quantization analysis plot and weight summary files
-
-All outputs saved to `quantization_output/`.
 
 ### 6. Run Verilog simulation
 - Open `power_mlp_fsm` project in Vivado 2025.2
-- Copy desired `.txt` file from `quantization_output/` to the xsim working directory
+- Copy desired `.txt` file from `fixedpoint_output/` to the xsim working directory
 - Run Behavioral Simulation
 - In Tcl Console: `run 15000ms`
 
@@ -361,25 +335,18 @@ All outputs saved to `quantization_output/`.
 nn-power-management/
 ├── preprocess.py               # Data cleaning, augmentation, scaling
 ├── train.py                    # MLP training (PyTorch)
-├── quantize.py                 # Quantization + fixed-point verification + test vector generation
-├── new_vectors.py              # Dataset generation for Verilog (real CSV vectors)
+├── quantize.py                 # Fixed-point quantization analysis
+├── test.py                     # Fixed-point weight generation
+├── new_vectors.py              # Dataset generation for Verilog
 ├── baseline_comparison.py      # MLP vs DVFS governors comparison
 ├── verilog/
 │   ├── power_mlp_top.v         # RTL implementation (4 modules)
 │   └── tb_power_mlp.v          # Testbench
 ├── fixedpoint_output/
-│   └── testvectors_real.txt    # 6326 real CSV vectors (for Verilog sim)
-├── quantization_output/
 │   ├── testvectors.txt          # 20 verified vectors (set 1)
 │   ├── testvectors2.txt         # 20 verified vectors (set 2)
-│   ├── testvectors_20000.txt    # 18,023 verified fixed-point vectors
-│   ├── weights_summary.txt      # 8-bit + 1000x FP weight values
-│   ├── weights_quantized.csv    # All weights as integers
-│   ├── layer_scales.csv         # Per-layer 8-bit scale factors
-│   ├── weights_layer1.mem       # Verilog $readmemh file — layer 1
-│   ├── weights_layer2.mem       # Verilog $readmemh file — layer 2
-│   ├── weights_layer3.mem       # Verilog $readmemh file — layer 3
-│   └── quantization_analysis.png
+│   ├── testvectors1000.txt      # 1000 test vectors
+│   └── testvectors_real.txt     # 6326 real CSV vectors
 ├── dataset_output/
 │   ├── feature_stats.csv        # Normalization ranges
 │   └── class_weights.csv        # Class weights for training
@@ -409,6 +376,7 @@ nn-power-management/
 - **OS:** Windows 11
 
 ---
+
 
 ## Roadmap
 
